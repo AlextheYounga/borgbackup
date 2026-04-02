@@ -1,6 +1,7 @@
 //! The asynchronous version of the borg commands are defined in this module
 
 use std::io;
+use std::path::Path;
 use std::process::Output;
 
 pub use compact::compact;
@@ -24,16 +25,25 @@ pub(crate) async fn execute_borg(
     args: Vec<String>,
     passphrase: &Option<String>,
 ) -> Result<Output, io::Error> {
-    Ok(if let Some(passphrase) = passphrase {
-        tokio::process::Command::new(local_path)
-            .env("BORG_PASSPHRASE", passphrase)
-            .args(args)
-            .output()
-            .await?
-    } else {
-        tokio::process::Command::new(local_path)
-            .args(args)
-            .output()
-            .await?
-    })
+    execute_borg_with_current_dir(local_path, args, passphrase, None).await
+}
+
+pub(crate) async fn execute_borg_with_current_dir(
+    local_path: &str,
+    args: Vec<String>,
+    passphrase: &Option<String>,
+    current_dir: Option<&Path>,
+) -> Result<Output, io::Error> {
+    let mut command = tokio::process::Command::new(local_path);
+    command.args(args);
+
+    if let Some(passphrase) = passphrase {
+        command.env("BORG_PASSPHRASE", passphrase);
+    }
+
+    if let Some(current_dir) = current_dir {
+        command.current_dir(current_dir);
+    }
+
+    command.output().await
 }
