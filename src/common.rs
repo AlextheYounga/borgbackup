@@ -684,6 +684,10 @@ pub struct ExtractOptions {
     /// Remove the specified number of leading path elements.
     /// Pathnames with fewer elements will be silently skipped.
     pub strip_components: Option<u16>,
+    /// Paths to extract. If left empty the entire archive is extracted.
+    ///
+    /// Paths are relative to the archive root.
+    pub paths: Vec<String>,
 }
 
 impl ExtractOptions {
@@ -695,6 +699,7 @@ impl ExtractOptions {
             destination,
             passphrase: None,
             strip_components: None,
+            paths: vec![],
         }
     }
 }
@@ -995,7 +1000,7 @@ pub(crate) fn list_parse_output(res: Output) -> Result<ListRepository, ListError
 
 pub(crate) fn extract_fmt_args(options: &ExtractOptions, common_options: &CommonOptions) -> String {
     format!(
-        "--log-json {common_options} extract{strip_components} {repo}::{archive}",
+        "--log-json {common_options} extract{strip_components} {repo}::{archive}{paths}",
         common_options = String::from(common_options),
         strip_components = options
             .strip_components
@@ -1003,6 +1008,19 @@ pub(crate) fn extract_fmt_args(options: &ExtractOptions, common_options: &Common
             .unwrap_or_default(),
         repo = shell_escape(&options.repository),
         archive = shell_escape(&options.archive),
+        paths = if options.paths.is_empty() {
+            "".to_string()
+        } else {
+            format!(
+                " {}",
+                options
+                    .paths
+                    .iter()
+                    .map(|x| shell_escape(x))
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            )
+        },
     )
 }
 
@@ -1198,8 +1216,8 @@ mod tests {
     use std::num::NonZeroU16;
 
     use crate::common::{
-        mount_fmt_args, prune_fmt_args, CommonOptions, MountOptions, MountSource, Pattern,
-        PruneOptions,
+        extract_fmt_args, mount_fmt_args, prune_fmt_args, CommonOptions, ExtractOptions,
+        MountOptions, MountSource, Pattern, PruneOptions,
     };
     #[test]
     fn test_prune_fmt_args() {
@@ -1261,6 +1279,34 @@ mod tests {
         let args = mount_fmt_args(&mount_option, &CommonOptions::default());
         assert_eq!(
             "--log-json  mount /my-repo --first 10 --last 5 --glob-archives archive-name*12-2022* /borg-mount --pattern='sh:**/foobar/*'",
+            args
+        );
+    }
+
+    #[test]
+    fn test_extract_fmt_args_empty_paths() {
+        let extract_options = ExtractOptions::new(
+            "repo".to_string(),
+            "archive".to_string(),
+            "/tmp/destination".to_string(),
+        );
+
+        let args = extract_fmt_args(&extract_options, &CommonOptions::default());
+        assert_eq!("--log-json  extract 'repo'::'archive'", args);
+    }
+
+    #[test]
+    fn test_extract_fmt_args_with_paths() {
+        let mut extract_options = ExtractOptions::new(
+            "repo".to_string(),
+            "archive".to_string(),
+            "/tmp/destination".to_string(),
+        );
+        extract_options.paths = vec!["ecfr/title-01".to_string(), "ecfr/title 03".to_string()];
+
+        let args = extract_fmt_args(&extract_options, &CommonOptions::default());
+        assert_eq!(
+            "--log-json  extract 'repo'::'archive' 'ecfr/title-01' 'ecfr/title 03'",
             args
         );
     }
